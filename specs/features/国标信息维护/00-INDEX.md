@@ -5,9 +5,9 @@
 - **Feature Name**：`国标信息维护`
 - **Branch**：`feature/国标信息维护`
 - **LoopX Goal**：`国标信息维护-goal`
-- **Current Status**：`Proposed（阶段 1~4 草案完成；2026-11-11 需求文档人工审核通过，结论“好的通过”、无新增批注；契约已同步修订并保持 DRAFT；未进入编码）`
-- **Contract Status**：`DRAFT (Pending Approval)`
-- **ADR**：[ADR-0008：国标身份热更新与密码明文回显](../../../docs/adr/0008-gb-identity-hot-apply.md)（需求文档已审核通过；ADR 文件状态仍为 Proposed）
+- **Current Status**：`IMPLEMENTED（阶段 1~6 完成：需求评审通过、契约人工批准并锁定、业务实现与测试完成、四大硬门禁 118/118 通过；change-quality 收据因 Issue #13 阻断，按用户 2026-11-12 决定人工豁免；未推送、未创建 PR）`
+- **Contract Status**：`FROZEN & APPROVED (user@2026-11-11 07:47:28)`
+- **ADR**：[ADR-0008：国标身份热更新与密码明文回显](../../../docs/adr/0008-gb-identity-hot-apply.md)（需求文档已审核通过；ADR 文件状态仍为 Proposed，转 Accepted 待人工审批）
 - **Issue 路由**：`BLOCKED` — GitHub Issue #1 无法读取（政策仓库与 clone remote 不一致），`loopx-flow issue 1` exit=1；详见 `05-evidence.md`
 
 ## 审阅总览
@@ -19,8 +19,8 @@
 | 实现决策 | 已审核通过 | 身份字段热更新；绑定字段保留重启；domain 弱一致；空密码拒绝；不主动踢会话 |
 | 需求切片 | 已审核通过 | 7 条验收：编辑回显、格式校验、明文、后续请求生效、原子性、重启区分、domain 默认填充 |
 | 任务拆分 | 已审核通过 | 单一交付任务 T-1；AC-1~AC-7 作为同一任务的验收边界；不拆分 Story；单 PR ≤ 500 行 |
-| 契约 | 已同步（DRAFT） | `04-contract.md` 已按审核通过的 ADR/PRD/决策修订；不再允许空密码、不再把 domain 强一致列为未决；SHA256 `c7bc3352b22f1ab3ee6ebd60fbd0d72e75cc4de8f9c257d9b9981207ae11a975`；未审批 |
-| 证据 | 分析级 | 已记录基线、需求澄清事实、人工审核通过结论与契约同步指纹；未跑门禁、无质量收据 |
+| 契约 | 已冻结并批准 | `04-contract.md` 已人工批准并锁定；SHA256 `fa86cbcee2b2cb06045d1404f9e91c6a5fc551fb2b364318e52a54720efe1905`；与 registry `contract_revision` 一致 |
+| 证据 | 实现级（含豁免） | 四大硬门禁 118/118 通过；Maven 单测按项目配置 skipped；前端聚焦测试 6/6；change-quality 收据 BLOCKED（Issue #13），用户人工豁免 |
 
 ## 关键结论
 

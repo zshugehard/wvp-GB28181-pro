@@ -1,7 +1,7 @@
 - **Status**: APPROVED BY HUMAN (user@2026-11-11 07:47:28)
 # 实现决策：国标信息维护
 
-- **状态**：DRAFT（需求澄清与 503 中断后续收尾复核已收敛；ADR 待人类评审；未执行契约审批）
+- **状态**：IMPLEMENTED（需求澄清、ADR、契约审批与实现均已完成；change-quality 收据按用户 2026-11-12 决定人工豁免）
 - **Feature**：`国标信息维护`
 - **关联 ADR**：[ADR-0008：国标身份热更新与密码明文回显](../../../docs/adr/0008-gb-identity-hot-apply.md)
 - **产品正文**：[docs/prd/loopx-workflow.md](../../../docs/prd/loopx-workflow.md)
