@@ -1,50 +1,102 @@
-# AGENTS.md
+# AGENTS.md: LoopX AI-Native 场景化研发与交付协议 (v2.0)
 
-## 概览
+本项目遵循 **LoopX 原生能力引擎 + Feature 自包含资产胶囊 + 场景化双管线 + 质量门禁收据融合** 的端到端标准化研发管线。所有在此仓库工作的 Agent 必须严格遵守以下工程规范。
 
-- WVP-Pro：GB28181 + JT808/JT1078 视频平台。后端为 Spring Boot 3.4 / Java 21 单 Maven 模块；前端在 `web/`（Vue 2 + Element UI）。
-- 入口：`src/main/java/com/genersoft/iot/vmp/VManageBootstrap.java`。
-- 后端代码根目录：`src/main/java/com/genersoft/iot/vmp/`。
+---
 
-## 关键路径
+## 核心工作铁律 (Core Axioms)
 
-- `gb28181/`：SIP 信令、设备/通道、点播、级联。核心类：`service/impl/PlayServiceImpl`、`InviteStreamServiceImpl`、`DialogTerminationService`；会话在 `session/SipInviteSessionManager`，信令在 `transmit/`。
-- `jt1078/`：JT808/JT1078 协议与业务；`media/`：ZLMediaKit 接入；`streamProxy/`、`streamPush/`：拉流/推流代理。
-- `web/`、`vmanager/`：REST 接口；`service/`：跨模块服务；`conf/`：配置、安全、调度（`DynamicTask`）；`storager/`：Redis 缓存。
-- `dao/*Provider`：MyBatis 动态 SQL，必须用 `#{}`，禁止拼字符串。
-- `数据库/<version>/`：按版本维护 SQL，无 Flyway/Liquibase。
+0. **前置环境哨兵先行 (Pre-flight Sentinel First)**：
+   - 任何 Agent 在开始编码或进入管线前，必须首先执行 `./scripts/preflight-check.sh` 或 `loopx-flow doctor`。
+   - 确保 Git 仓库、Remote、CLI（`gh`/`node`/`npm`/`loopx`）、四大门禁脚本及工作流目录骨架 100% 就绪；未就绪时执行 `./scripts/preflight-check.sh --fix` 自动补齐，严禁在未就绪环境中裸跑。
+1. **先思考后写代码 (Think Before Coding)**：
+   - 严禁隐瞒模糊需求。进入编码前必须通过 `design-grill` 消除所有“it depends”。
+   - 严禁向用户询问可通过读代码库（`rg`/`read`）解答的事实性问题。
+2. **产品正文唯一，Feature 胶囊只承载一次交付 (Product Source of Truth)**：
+   - 产品需求只写在 `docs/prd/loopx-workflow.md`（`REQ-*`）。命令、阶段、失败条件与资产路径只写在 `docs/design/loopx-workflow-design.md`。
+   - 改变产品行为或失败条件时，先写 `docs/adr/NNNN-*.md` 并回写上述正文，再冻结契约。禁止为同一行为再写一份产品级 PRD。
+   - `specs/features/<feature>/` 只保留这一次交付的执行资产：
+     - `00-INDEX.md`（审阅总览看板）
+     - `01-decisions.md`（本胶囊的实现取舍，并链接相关 ADR；不是产品决策正文）
+     - `02-prd.md`（本胶囊覆盖的 `REQ-*` 或 ADR 编号、切片验收与承重假设；不是第二份产品 PRD）
+     - `03-stories.md`（阶段 3 故事拆分与排期）
+     - `04-contract.md`（阶段 4 TypeScript 契约与任务图）
+     - `05-evidence.md`（阶段 5/6 门禁实测与 LoopX 质量凭据）
+   - 规则来源是 `docs/adr/0001-product-source-of-truth.md`。`approve` / `gate` 尚未检查胶囊是否引用了 `REQ-*`（见 PRD `REQ-TRACE-2`）。
+3. **断点 1 契约冻结与审批先行 (Contract Freeze & Checkpoint 1 Approval)**：
+   - 在 `specs/features/<feature>/04-contract.md` 顶部必须冻结不可变 TypeScript 接口签名与断言不变量。
+   - 必须通过 `loopx-flow approve contract <feature>` 由人类决策者执行审批放行，系统自动将状态标记为 `Contract-Status: FROZEN & APPROVED` 并通过 `loopx configure-goal --progress-review-contract-revision <sha256>` 物理锁定契约指纹后，方可进入编码实现。
+4. **多 Agent 任务排他锁与反熵增 (Multi-Agent Concurrency & Anti-Entropy)**：
+   - 并行工作时，必须先调用 `loopx task-lease acquire --goal-id <gid> --todo-id <tid>` 锁定租约，严禁争抢同一任务。
+   - 多特性分支开发时，合并前必须通过 `loopx integration-branch` 在本地隔离 worktree 提前探测并解决冲突。
+   - **反熵增与代码退役 (anti-entropy-governance)**：替换旧逻辑时严格执行 `delete-first`，彻底清理废弃变量、旧分支与孤儿代码，严禁堆砌无意义的第 4 套兜底层。
+5. **本地四大硬门禁与新鲜证据链 (Verifiable Gates & Fresh Evidence)**：
+   - 任何交付前，本地四大门禁必须 100% 全绿，用例只增不减：
+     ```bash
+     npm run typecheck && npm run lint && npm run build && npm run test
+     ```
+6. **Code Review 深度融入 LoopX 质量门禁 (Receipt Binding & Optional OCR)**：
+   - 阿里 OCR 为**选配能力**，仅在用户显式要求时在 `open-code-review` 技能内部进行自检、安装与扫描，不作为默认阻塞。
+   - 默认执行基于跨边界语义契约的 `code-review` 技能。
+   - 审查交付物严禁割裂存放在 `/tmp/`：必须通过 `skills/code-review/scripts/ingest-to-loopx-quality.js` 统一编译为 LoopX `change_quality_agent_result_v2`，写入带有确切 Git Diff SHA 签名的不可篡改 Receipt，并同步沉淀在 `specs/features/<feature>/05-evidence.md`。
+   - `loopx change-quality verify` 严格检验：若存在未解决的 Blocker 缺陷或代码偷跑篡改，一票否决阻断交付。
+7. **PR 执行期命令治理 (LoopX-Workflow First & LoopX Fallback Disclosure)**：
+   - 整个 PR 生命周期（`gate` → `check` → `pr` → `review` → `respond` → `merge`）必须优先通过 `bin/loopx-flow` 场景化命令管理；禁止绕过编排器直接用 ad-hoc 脚本拼接状态变更。
+   - 当 loopx-flow 流程尚不完备、命令缺失或暂不支持某项能力时，允许降级使用 LoopX 原生 `loopx` CLI 完成，但必须在交付报告与 PR 评论中**显式披露两点**：(a) 实际执行的命令；(b) 为什么 loopx-flow 未支持该项能力（能力缺口）。
+   - 降级是临时手段而非终点：一旦确认能力缺口，必须在同一次交付中补上 `loopx-flow` 场景化命令或登记该缺口，逐步收敛降级路径（anti-entropy）。
+   - 评审报告格式以 LoopX `pr-review` 返回的 `review_template`（动机 / 改动思路 / 具体改动 / 对主干的风险 / 我的整体评价）为唯一权威，严禁任何自造 Block 模板；代码类变更必须在「具体改动」下提供 `### 关键代码讲解`。`loopx-flow review` 与 `loopx-flow respond` 均复用该原生格式。
 
-## 架构与状态
+---
 
-- 运行态数据分三层：MySQL（配置/历史）、Redis（设备、InviteInfo、SIP 事务）、JVM 内存（等待回调、任务表）。修改点播/会话逻辑时三处都要考虑。
-- `SipInviteSessionManager` 将 SIP 事务持久化到 Redis，WVP 重启后仍可能存在。
-- 设备 BYE/事务清理优先复用 `DialogTerminationService`，不要新增直接 `cmder.streamByeCmd` 的旁路。
-- `DynamicTask` 的 key 全局有效；完成/取消的 future 必须移除，否则无法重新注册。
+## 管线 A: Feature 研发管线 (8 阶段场景化闭环)
 
-## 构建与运行
+- **阶段 0：前置体检** ➔ 运行 `loopx-flow doctor` 确保 Git、CLI、认证、四大门禁与目录就绪。
+- **阶段 1：方案研讨** ➔ 调用 `design-grill` 排除事实疑问。产品级取舍写入 `docs/adr/` 并修订 `docs/prd/loopx-workflow.md` 与必要时的详细设计。`specs/features/<feature>/01-decisions.md` 只记录本胶囊的实现取舍并链接该 ADR。
+- **阶段 2：需求切片** ➔ 对照产品 PRD 列出本胶囊要满足的 `REQ-*`。行为不在 PRD 中则先完成阶段 1 的 ADR，禁止在 `02-prd.md` 另立产品需求。`strategy-red-team` 只攻击本切片的承重假设。
+- **阶段 3：特性拆分** ➔ `user-stories` / `prioritize-features`，控制单 Feature Diff ≤ 500 行，产出 `specs/features/<feature>/03-stories.md`。
+- **阶段 4：契约冻结与断点 1 审批** ➔ 编写 `specs/features/<feature>/04-contract.md` 顶部固化 TypeScript 签名；生成 `00-INDEX.md` 全景大盘；人类执行 `loopx-flow approve contract <feature>` 锁定契约指纹并放行。
+- **阶段 5：TDD 循环实现与反熵增** ➔ 认领排他租约 `loopx task-lease acquire` ➔ 红绿重构（单测先写先红）➔ 依 `anti-entropy-governance` 清理退役旧逻辑 ➔ 四大门禁全绿。
+- **阶段 6：代码审查与质量收据融合** ➔ 执行 `loopx-flow check`，运行语义审查（选配 OCR）并通过适配器写入 LoopX `change-quality` 严格 Receipt，回写 `specs/features/<feature>/05-evidence.md`。
+- **阶段 7：预集成与交付审查 (L2)** ➔ `loopx integration-branch` 本地预集成 ➔ `gh pr create` 发起 PR ➔ `loopx-flow review <pr_id>` 顶置 LoopX 原生五段式审查报告（复用 `pr-review` 的 `review_template`）至 GitHub PR 页面。
+- **阶段 8：断点 2 审批、原子合入与归档** ➔ 人类在 GitHub PR 页面核验 8 项事实后点击 Approve ➔ 运行 `loopx-flow merge <pr_id>` ➔ 严格通过 `loopx pr-review --check-merge-readiness` 物理防偷跑核验 ➔ Squash 合入主干 ➔ 资产包整包原子移动至 `specs/archive/<feature>/` ➔ 自动闭环核销 Goal。
 
-- 使用 JDK 21；快速编译：`mvn -q -DskipTests compile`。
-- 后端：`mvn spring-boot:run -Dspring-boot.run.profiles=dev`。`application.yml` 默认激活的 `274-dev` 被 gitignore，新 clone 需改用 `dev` 或本地私有 profile。
-- 前端：`cd web && npm install`；`npm run dev`（9528，代理到 18080）；`npm run build:prod` 输出到 `src/main/resources/static`（gitignore）。`mvn package` 不会构建前端。
-- 全栈：`cd docker && docker compose up -d`。
+---
 
-## 测试
+## 管线 B: GitHub Issue 修复管线 (双分支决策)
 
-- JUnit 5 + Mockito 单测，无需外部服务。
-- `pom.xml` 硬编码 `<skipTests>true</skipTests>`，`-DskipTests=false` 无效；用 IDE 或临时改为 `false`，跑完恢复。
-- 较新 JDK 下 Mockito 可能失败，务必使用 JDK 21。
+针对接收到的 GitHub Issue，运行 `loopx-flow issue <id>`（底层调用 `loopx issue-fix feasibility`）自动判定分流：
 
-## 编程规范
+### 路径 A：Fast-Path（极简微闭环）
+- **准入标准**：改动 ≤ 20 行；纯 Typo / 错误日志 / 文档 / 隔离配置 / 单测补充；0 对外接口或持久化模型变动。
+- **执行命令**：
+  1. 定位并补充单测验证。
+  2. 外科手术式最小修复（不碰邻近无关代码）。
+  3. 四大门禁全绿 + `loopx-flow check` 质量收据通过。
+  4. 执行自适应提交：`./scripts/fast-fix-push.sh <ISSUE_ID> "fix(<scope>): <summary>"`
+     （若主干未设保护则直推合入；若遇分支保护拦截，脚本自动降级为创建 PR 并自动合并）。
 
-- 详细规范见 [`doc/编程规范.md`](doc/编程规范.md)；新代码遵守，存量代码逐步靠拢。
-- Controller 保持薄，业务放 Service；普通返回由 `GlobalResponseAdvice` 包装为 `WVPResult`，业务错误抛 `ControllerException`。
-- 重点约束：DAO 外部参数用 `#{}`、敏感信息不入日志/接口/配置、并发状态清理必须明确归属并使用条件删除、修 bug 补回归测试。
+### 路径 B：Standard PR-Path（标准 PR 流程）
+- **准入标准**：涉及业务逻辑、状态变更、算法调整、高危并发或任何不符合 Fast-Path 的缺陷。
+- **执行命令**：
+  1. 调用 `loopx issue-fix caller-repo-branch` 检出 `fix/issue-<id>`。
+  2. **七层根因因果诊断 (`systematic-debugging`)**：从 L1 症状持续下探至 L7 规格缺口，定位根本所有者 (Canonical Owner)。
+  3. **Failing Repro 先行**：在 `tests/unit/issues/issue-<id>.test.ts` 下新增针对根本所有者的复现用例，**验证必须先 FAIL**。
+  4. 实施外科手术修复与代码退役（`delete-first`），验证用例变绿。
+  5. 运行 `loopx-flow check` 固化质量收据。
+  6. 创建 GitHub PR 并在页面呈现修复对比证据，人类 Approve 后由 `loopx-flow merge <pr_id>` 合并核销。
 
-## 约定
+---
 
-- 思考以及正文输出以中文为主。
-- 注释、日志、提交信息以中文为主。
-- 适时重构，避免小修小补导致代码臃肿；优先复用现有服务和抽象。
-- 不要提交 `target/`、`logs/`、`data/`、`web/node_modules/`、`src/main/resources/static/` 及私有 `application-*.yml`。
-- 审核 PR 先说结论，建议合并 / 可合并但需处理 / 建议发回作者修改；PR打算做什么；PR描述是否成立；合并后有哪些需要继续修改的内容。
-- 注重隐私和安全，避免在日志、提交信息、配置文件以及接口中泄露敏感信息。
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues (`JustinIanAI/loopx-workflow`) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical triage state roles map 1:1 to their label strings: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` at the repo root plus `docs/adr/`. See `docs/agents/domain.md`.

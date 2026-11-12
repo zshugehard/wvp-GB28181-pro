@@ -40,3 +40,16 @@ certificates
 /打包/
 /snap/
 /config/
+
+# LoopX workflow runtime artifacts
+.loopx/
+.loopx/**/*.lock
+.loopx/goals/
+.codex/
+.tmp-*
+
+# LoopX workflow dependencies
+node_modules/
+
+# LoopX per-feature state locks
+specs/**/ACTIVE_STATE.md.lock
