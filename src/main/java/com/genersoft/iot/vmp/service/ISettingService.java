@@ -8,6 +8,7 @@ import com.genersoft.iot.vmp.vmanager.bean.ProfileDetail;
 import com.genersoft.iot.vmp.vmanager.bean.ProfileInfo;
 import com.genersoft.iot.vmp.vmanager.bean.ProfileSaveRequest;
 import com.genersoft.iot.vmp.vmanager.bean.SipServerConfig;
+import com.genersoft.iot.vmp.vmanager.bean.SipServerSaveResult;
 import com.genersoft.iot.vmp.vmanager.bean.UserSettingConfig;
 import com.genersoft.iot.vmp.vmanager.bean.UserSettingSaveResult;
 import com.genersoft.iot.vmp.vmanager.bean.WebServerConfig;
@@ -118,12 +119,12 @@ public interface ISettingService {
     /**
      * 保存国标(GB28181) SIP 服务配置到当前生效的配置文件
      * <p>
-     * 修改后需要重启服务才能生效
+     * 身份字段写入运行时并对后续请求生效, 绑定字段仍需重启
      *
      * @param config 国标SIP服务配置
-     * @return 被修改的配置文件路径
+     * @return 保存结果, 区分即时生效字段与需重启字段
      */
-    String saveSipServerConfig(SipServerConfig config);
+    SipServerSaveResult saveSipServerConfig(SipServerConfig config);
 
     /**
      * 查询部标(JT/T 1078)服务配置

@@ -163,9 +163,9 @@ public class RedisGroupMsgListener implements MessageListener {
         try {
             String deviceTemplate = userSetting.getGroupSyncDeviceTemplate();
             if (ObjectUtils.isEmpty(deviceTemplate) || !deviceTemplate.contains("%s")) {
-                String domain = sipConfig.getDomain();
-                if (domain.length() != 10) {
-                    domain = sipConfig.getId().substring(0, 10);
+                String domain = sipConfig.identitySnapshot().getDomain();
+                if (domain == null || domain.length() != 10) {
+                    domain = sipConfig.identitySnapshot().getId().substring(0, 10);
                 }
                 deviceTemplate = domain + "%s0%s";
             }

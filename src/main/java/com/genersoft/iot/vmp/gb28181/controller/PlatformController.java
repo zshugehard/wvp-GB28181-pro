@@ -11,6 +11,7 @@ import com.genersoft.iot.vmp.gb28181.controller.bean.UpdateChannelParam;
 import com.genersoft.iot.vmp.gb28181.service.IPlatformChannelService;
 import com.genersoft.iot.vmp.gb28181.service.IPlatformService;
 import com.genersoft.iot.vmp.utils.DateUtil;
+import com.genersoft.iot.vmp.vmanager.bean.SipIdentity;
 import com.genersoft.iot.vmp.vmanager.bean.ErrorCode;
 import com.genersoft.iot.vmp.vmanager.bean.WVPResult;
 import com.github.pagehelper.PageInfo;
@@ -50,10 +51,11 @@ public class PlatformController {
     @GetMapping("/server_config")
     public JSONObject serverConfig() {
         JSONObject result = new JSONObject();
+        SipIdentity identity = sipConfig.identitySnapshot();
         result.put("deviceIp", sipConfig.getShowIp());
         result.put("devicePort", sipConfig.getPort());
-        result.put("username", sipConfig.getId());
-        result.put("password", sipConfig.getPassword());
+        result.put("username", identity.getId());
+        result.put("password", identity.getPassword());
         return result;
     }
 

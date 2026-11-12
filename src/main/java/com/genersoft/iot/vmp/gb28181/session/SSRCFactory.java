@@ -44,13 +44,15 @@ public class SSRCFactory {
     @Autowired
     private UserSetting userSetting;
 
-    private String domainPart;
-
     @PostConstruct
     public void init() {
-        String sipDomain = sipConfig.getDomain();
-        domainPart = sipDomain.length() >= 8 ? sipDomain.substring(3, 8) : sipDomain;
+        // 身份字段可在运行中热更新, domain 必须在每次分配 SSRC 时读取当前快照
         scheduler.scheduleAtFixedRate(this::rebuild, 5, 5, TimeUnit.SECONDS);
+    }
+
+    private String currentDomainPart() {
+        String sipDomain = sipConfig.identitySnapshot().getDomain();
+        return sipDomain.length() >= 8 ? sipDomain.substring(3, 8) : sipDomain;
     }
 
     public String getPlaySsrc(String mediaServerId) {
@@ -65,14 +67,14 @@ public class SSRCFactory {
 
     public String getPlaySsrc(MediaServer mediaServer) {
         if (mediaServer.isRtpEnable() && userSetting.getSsrcRandom()) {
-            return "0" + domainPart + String.format("%04d", ThreadLocalRandom.current().nextInt(10000));
+            return "0" + currentDomainPart() + String.format("%04d", ThreadLocalRandom.current().nextInt(10000));
         }
         return getPlaySsrc(mediaServer.getId());
     }
 
     public String getPlayBackSsrc(MediaServer mediaServer) {
         if (mediaServer.isRtpEnable() && userSetting.getSsrcRandom()) {
-            return "1" + domainPart + String.format("%04d", ThreadLocalRandom.current().nextInt(10000));
+            return "1" + currentDomainPart() + String.format("%04d", ThreadLocalRandom.current().nextInt(10000));
         }
         return getPlayBackSsrc(mediaServer.getId());
     }
@@ -85,7 +87,7 @@ public class SSRCFactory {
             do {
                 if (!bits.get(index)) {
                     bits.set(index);
-                    return domainPart + String.format("%04d", index);
+                    return currentDomainPart() + String.format("%04d", index);
                 }
                 index = (index + 1) % 10000;
             } while (index != start);

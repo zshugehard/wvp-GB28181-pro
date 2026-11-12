@@ -1,5 +1,7 @@
 package com.genersoft.iot.vmp.gb28181.session;
 
+import com.genersoft.iot.vmp.conf.SipConfig;
+import com.genersoft.iot.vmp.vmanager.bean.SipIdentity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -15,13 +17,15 @@ class SSRCFactoryTest {
 
     private SSRCFactory ssrcFactory;
 
-    private static final String DOMAIN_PART = "20000";
+    private static final String DOMAIN_PART = "10500";
     private static final String SERVER_ID = "test-server";
 
     @BeforeEach
     void setUp() throws Exception {
         ssrcFactory = new SSRCFactory();
-        ReflectionTestUtils.setField(ssrcFactory, "domainPart", DOMAIN_PART);
+        SipConfig sipConfig = new SipConfig();
+        sipConfig.applyIdentity(new SipIdentity("41010500002000000001", "4101050000", "test"));
+        ReflectionTestUtils.setField(ssrcFactory, "sipConfig", sipConfig);
 
         Field schedulerField = SSRCFactory.class.getDeclaredField("scheduler");
         schedulerField.setAccessible(true);

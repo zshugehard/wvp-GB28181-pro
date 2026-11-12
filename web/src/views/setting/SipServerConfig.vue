@@ -88,9 +88,20 @@
             v-model="form.password"
             :disabled="!writable"
             clearable
+            :type="passwordVisible ? 'text' : 'password'"
             placeholder="公共认证密码"
             style="width: 320px"
-          />
+          >
+            <el-button
+              slot="suffix"
+              type="text"
+              class="password-toggle"
+              :icon="passwordVisible ? 'el-icon-view' : 'el-icon-lock'"
+              @click="passwordVisible = !passwordVisible"
+            >
+              {{ passwordVisible ? '隐藏' : '显示' }}
+            </el-button>
+          </el-input>
         </el-form-item>
 
         <el-form-item label="监听网卡IP" prop="ip">
@@ -165,8 +176,9 @@
 
       <div class="save-bar">
         <span class="save-hint">
-          <template v-if="dirty">配置已修改，保存后需重启服务生效</template>
-          <template v-else-if="pendingRestart">配置已保存，重启服务后生效</template>
+          <template v-if="dirty">配置已修改，身份字段保存后对后续请求生效</template>
+          <template v-else-if="pendingRestart">身份字段已生效，绑定字段需重启服务后生效</template>
+          <template v-else-if="appliedFields.length > 0">身份字段已生效，既有会话不会被主动注销</template>
           <template v-else>当前配置未变更</template>
         </span>
         <div>
@@ -229,8 +241,15 @@ export default {
       }
     }
     const validDomain = (rule, value, callback) => {
-      if (value && !/^\d{10}$/.test(value.trim())) {
+      if (!value || !/^\d{10}$/.test(value.trim())) {
         callback(new Error('国标域必须为10位数字'))
+      } else {
+        callback()
+      }
+    }
+    const validPassword = (rule, value, callback) => {
+      if (typeof value !== 'string' || !value.trim()) {
+        callback(new Error('认证密码不能为空'))
       } else {
         callback()
       }
@@ -260,9 +279,13 @@ export default {
       // 后端标识的“需重启才能生效”字段
       restartFieldKeys: [],
       restartTagVisible: false,
+      appliedFields: [],
+      domainEditedManually: false,
+      passwordVisible: true,
       rules: {
         id: [{ validator: validId, trigger: 'blur' }],
         domain: [{ validator: validDomain, trigger: 'blur' }],
+        password: [{ validator: validPassword, trigger: 'blur' }],
         port: [{ validator: requiredNumber, trigger: 'blur' }],
         timeout: [{ validator: validTimeout, trigger: 'blur' }]
       }
@@ -282,6 +305,24 @@ export default {
   },
   created() {
     this.reload()
+  },
+  watch: {
+    'form.id'(newId, oldId) {
+      if (this.domainEditedManually) {
+        return
+      }
+      const previousPrefix = String(oldId || '').slice(0, 10)
+      if (!this.form.domain || (previousPrefix.length === 10 && this.form.domain === previousPrefix)) {
+        this.form.domain = newId.slice(0, 10)
+      }
+    },
+    'form.domain'(newDomain, oldDomain) {
+      if (newDomain === oldDomain) {
+        return
+      }
+      const currentId = String(this.form.id || '')
+      this.domainEditedManually = !!newDomain && newDomain !== currentId.slice(0, 10)
+    }
   },
   methods: {
     // 是否属于后端标识的“需重启才能生效”字段
@@ -315,8 +356,11 @@ export default {
             alarm: !!data.alarm,
             timeout: typeof data.timeout === 'number' ? data.timeout : null
           }
-          this.form = { ...form }
-          this.saved = { ...form }
+          const formWithDomain = this.withDefaultDomain(form)
+          this.form = { ...formWithDomain }
+          this.saved = { ...formWithDomain }
+          this.appliedFields = []
+          this.domainEditedManually = false
           this.pendingRestart = false
         })
         .catch(error => {
@@ -330,12 +374,17 @@ export default {
       if (!this.dirty) {
         return
       }
+      const validated = Object.assign({}, this.form)
+      if (typeof validated.password !== 'string') {
+        validated.password = ''
+      }
+      this.form = validated
       this.$refs.form.validate(valid => {
         if (!valid) {
           return
         }
         this.$confirm(
-          '确认保存国标服务配置吗？保存后需要重启服务才能生效。',
+          '身份字段保存后对后续请求生效，端口/IP 等绑定字段需重启后生效。',
           '保存国标服务配置',
           {
             confirmButtonText: '保存并重启',
@@ -352,6 +401,12 @@ export default {
         })
       })
     },
+    withDefaultDomain(form) {
+      if (!form.domain && /^\d{20}$/.test(String(form.id || ''))) {
+        return { ...form, domain: String(form.id).slice(0, 10) }
+      }
+      return { ...form }
+    },
     doSave(needRestart) {
       this.saving = true
       this.$store.dispatch('setting/saveSipServerConfig', {
@@ -363,14 +418,18 @@ export default {
         password: this.form.password,
         alarm: this.form.alarm,
         timeout: this.form.timeout === '' ? null : this.form.timeout
-      }).then(() => {
-        this.$message.success('国标服务配置已保存')
+      }).then(res => {
+        const result = (res && res.data) || {}
+        this.appliedFields = Array.isArray(result.appliedFields) ? result.appliedFields : []
+        this.restartFieldKeys = Array.isArray(result.restartRequiredFields) ? result.restartRequiredFields : []
         this.saved = { ...this.form }
-        this.pendingRestart = true
+        this.pendingRestart = !!result.restartRequired
+        this.$message.success('身份字段已对后续请求生效，既有会话不会被主动注销')
+        if (this.pendingRestart) {
+          this.$message.info('端口、IP 等绑定字段需重启服务后生效')
+        }
         if (needRestart) {
           this.confirmRestart(() => this.reload())
-        } else {
-          this.$message.info('配置将在下次服务重启后生效')
         }
       }).catch(error => {
         this.$message.error(typeof error === 'string' ? error : '保存国标服务配置失败')
@@ -444,6 +503,11 @@ export default {
   margin-left: 2px;
   font-size: 12px;
   color: #909399;
+}
+
+.password-toggle {
+  padding: 0 4px;
+  font-size: 12px;
 }
 
 .tip-alert {

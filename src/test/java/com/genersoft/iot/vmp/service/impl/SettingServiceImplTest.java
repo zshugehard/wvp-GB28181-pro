@@ -1,5 +1,6 @@
 package com.genersoft.iot.vmp.service.impl;
 
+import com.genersoft.iot.vmp.conf.SipConfig;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
@@ -9,7 +10,10 @@ import com.genersoft.iot.vmp.vmanager.bean.ProfileDeleteRequest;
 import com.genersoft.iot.vmp.vmanager.bean.ProfileDetail;
 import com.genersoft.iot.vmp.vmanager.bean.ProfileInfo;
 import com.genersoft.iot.vmp.vmanager.bean.ProfileSaveRequest;
+import com.genersoft.iot.vmp.vmanager.bean.SipIdentity;
+import com.genersoft.iot.vmp.vmanager.bean.SipIdentityValidator;
 import com.genersoft.iot.vmp.vmanager.bean.SipServerConfig;
+import com.genersoft.iot.vmp.vmanager.bean.SipServerSaveResult;
 import com.genersoft.iot.vmp.vmanager.bean.UserSettingConfig;
 import com.genersoft.iot.vmp.vmanager.bean.UserSettingSaveResult;
 import com.genersoft.iot.vmp.vmanager.bean.WebServerConfig;
@@ -26,10 +30,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.Comparator;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -699,8 +705,8 @@ class SettingServiceImplTest {
         assertEquals("dev", config.getProfileId());
         assertTrue(config.isWritable());
         assertTrue(config.getFilePath().endsWith("application-dev.yml"));
-        assertEquals(List.of("id", "domain", "port", "password", "ip", "showIp", "timeout", "alarm"),
-                config.getRestartRequiredFields(), "国标服务配置全部字段均需重启生效");
+        assertEquals(List.of("port", "ip", "showIp", "timeout", "alarm"),
+                config.getRestartRequiredFields(), "只有绑定字段需要重启, 身份字段可热更新");
     }
 
     /**
@@ -742,6 +748,7 @@ class SettingServiceImplTest {
         MockEnvironment environment = envWithLocation("optional:file:" + configDir.toAbsolutePath() + "/");
         environment.setActiveProfiles("dev");
         inject(environment);
+        injectRuntimeIdentity("41010500002000000001", "4101050000", "old-password");
 
         SipServerConfig config = new SipServerConfig();
         config.setPort(5061);
@@ -1355,4 +1362,181 @@ class SettingServiceImplTest {
         assertFalse(Files.exists(configDir.resolve("application-prod.yml")));
         assertTrue(Files.exists(configDir.resolve("application-prod.yml.bak")));
     }
+
+    // ------------------------------------------------------------------
+    // 国标身份维护（AC-1 ~ AC-7）
+    // ------------------------------------------------------------------
+
+    private SipConfig sipIdentityConfig(String id, String domain, String password) {
+        SipConfig config = new SipConfig();
+        config.setId(id);
+        config.setDomain(domain);
+        config.setPassword(password);
+        config.setPort(5060);
+        config.setIp("0.0.0.0");
+        config.setShowIp("192.168.1.3");
+        config.setMonitorIps(List.of("0.0.0.0"));
+        config.setTimeout(1000L);
+        config.setAlarm(true);
+        return config;
+    }
+
+    private SipServerConfig identityPayload(String id, String domain, String password) {
+        SipServerConfig config = new SipServerConfig();
+        config.setPort(5060);
+        config.setId(id);
+        config.setDomain(domain);
+        config.setPassword(password);
+        config.setIp("0.0.0.0");
+        config.setShowIp("192.168.1.3");
+        config.setAlarm(true);
+        config.setTimeout(1000L);
+        return config;
+    }
+
+    private void writeIdentityConfig() throws IOException {
+        writeFile("application.yml", "spring:\n  profiles:\n    active: dev\n");
+        writeFile("application-dev.yml",
+                "sip:\n"
+                        + "  ip: 0.0.0.0\n"
+                        + "  show-ip: 192.168.1.3\n"
+                        + "  port: 5060\n"
+                        + "  domain: 4101050000\n"
+                        + "  id: 41010500002000000001\n"
+                        + "  password: old-password\n"
+                        + "  alarm: true\n"
+                        + "  timeout: 1000\n");
+        MockEnvironment environment = envWithLocation("optional:file:" + configDir.toAbsolutePath() + "/");
+        environment.setActiveProfiles("dev");
+        inject(environment);
+    }
+
+    private SipConfig injectRuntimeIdentity(String id, String domain, String password) {
+        SipConfig runtime = sipIdentityConfig(id, domain, password);
+        ReflectionTestUtils.setField(service, "sipConfig", runtime);
+        return runtime;
+    }
+
+    @Test
+    void validateSipIdentity_acceptsTrimmedIdAndDomainAndKeepsPasswordExactly() {
+        SipIdentity identity = SipIdentityValidator.validate(
+                "  41010500002000000002  ", "  4101050000  ", "  secret with spaces  ");
+
+        assertEquals("41010500002000000002", identity.getId());
+        assertEquals("4101050000", identity.getDomain());
+        assertEquals("  secret with spaces  ", identity.getPassword(), "password must not be trimmed");
+    }
+
+    @Test
+    void validateSipIdentity_rejectsEmptyAndWhitespacePassword() {
+        ControllerException empty = assertThrows(ControllerException.class,
+                () -> SipIdentityValidator.validate("41010500002000000001", "4101050000", ""));
+        assertEquals(400, empty.getCode());
+        assertEquals("认证密码不能为空", empty.getMsg());
+
+        ControllerException blank = assertThrows(ControllerException.class,
+                () -> SipIdentityValidator.validate("41010500002000000001", "4101050000", "   "));
+        assertEquals("认证密码不能为空", blank.getMsg());
+    }
+
+    @Test
+    void validateSipIdentity_rejectsEmptyDomain() {
+        ControllerException error = assertThrows(ControllerException.class,
+                () -> SipIdentityValidator.validate("41010500002000000001", "", "password"));
+        assertEquals(400, error.getCode());
+        assertEquals("国标域必须为10位数字", error.getMsg());
+    }
+
+    @Test
+    void validateSipIdentity_acceptsDomainDifferentFromIdPrefix() {
+        SipIdentity identity = SipIdentityValidator.validate(
+                "41010500002000000001", "9999999999", "password");
+        assertEquals("9999999999", identity.getDomain(), "domain only needs 10 digits, not id prefix");
+    }
+
+    @Test
+    void saveSipServerConfig_invalidIdentity_doesNotWriteOrChangeRuntime() throws IOException {
+        writeIdentityConfig();
+        SipConfig runtime = injectRuntimeIdentity("41010500002000000001", "4101050000", "old-password");
+        String before = Files.readString(configDir.resolve("application-dev.yml"));
+
+        ControllerException error = assertThrows(ControllerException.class,
+                () -> service.saveSipServerConfig(identityPayload("41010500002000000002", "4101050000", "   ")));
+
+        assertEquals(400, error.getCode());
+        assertEquals("认证密码不能为空", error.getMsg());
+        assertEquals(before, Files.readString(configDir.resolve("application-dev.yml")));
+        assertEquals("41010500002000000001", runtime.getId());
+        assertEquals("4101050000", runtime.getDomain());
+        assertEquals("old-password", runtime.getPassword());
+    }
+
+    @Test
+    void saveSipServerConfig_success_writesPlainYamlAndAppliesIdentity() throws IOException {
+        writeIdentityConfig();
+        SipConfig runtime = injectRuntimeIdentity("41010500002000000001", "4101050000", "old-password");
+
+        SipServerConfig payload = identityPayload(
+                "41010500002000000002", "9999999999", "  p@ss word  ");
+        payload.setPort(5061);
+        payload.setIp("127.0.0.1");
+        payload.setShowIp("127.0.0.2");
+        payload.setTimeout(2000L);
+        payload.setAlarm(false);
+        SipServerSaveResult result = service.saveSipServerConfig(payload);
+
+        String updated = Files.readString(configDir.resolve("application-dev.yml"));
+        assertTrue(updated.contains("password: \"  p@ss word  \""), "plaintext password should be kept exactly");
+        assertTrue(updated.contains("id: 41010500002000000002"));
+        assertTrue(updated.contains("domain: 9999999999"));
+        assertEquals("41010500002000000002", runtime.getId());
+        assertEquals("9999999999", runtime.getDomain());
+        assertEquals("  p@ss word  ", runtime.getPassword());
+        assertEquals(List.of("id", "domain", "password"), result.getAppliedFields());
+        assertEquals(List.of("port", "ip", "showIp", "timeout", "alarm"), result.getRestartRequiredFields());
+        assertTrue(result.isRestartRequired());
+        assertEquals(configDir.resolve("application-dev.yml").toFile().getAbsolutePath(), result.getFilePath());
+    }
+
+    @Test
+    void saveSipServerConfig_identityOnly_doesNotReportRestart() throws IOException {
+        writeIdentityConfig();
+        injectRuntimeIdentity("41010500002000000001", "4101050000", "old-password");
+
+        SipServerConfig payload = identityPayload("41010500002000000002", "4101050000", "new-password");
+        payload.setIp(null);
+        payload.setShowIp(null);
+        payload.setAlarm(null);
+        payload.setTimeout(null);
+
+        SipServerSaveResult result = service.saveSipServerConfig(payload);
+
+        assertEquals(List.of("id", "domain", "password"), result.getAppliedFields());
+        assertFalse(result.isRestartRequired());
+        assertTrue(result.getRestartRequiredFields().isEmpty());
+    }
+
+    @Test
+    void saveSipServerConfig_writeFailure_keepsRuntimeIdentity() throws IOException {
+        writeIdentityConfig();
+        SipConfig runtime = injectRuntimeIdentity("41010500002000000001", "4101050000", "old-password");
+        Path target = configDir.resolve("application-dev.yml");
+        Files.setPosixFilePermissions(target,
+                Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE));
+
+        try {
+            assertThrows(ControllerException.class,
+                    () -> service.saveSipServerConfig(identityPayload(
+                            "41010500002000000002", "4101050000", "new-password")));
+        } finally {
+            Files.setPosixFilePermissions(target,
+                    Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+        }
+
+        assertEquals("41010500002000000001", runtime.getId());
+        assertEquals("4101050000", runtime.getDomain());
+        assertEquals("old-password", runtime.getPassword());
+    }
+
+
 }

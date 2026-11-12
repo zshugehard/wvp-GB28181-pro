@@ -654,7 +654,7 @@ public class SIPCommander implements ISIPCommander {
         broadcastXml.append("<Notify>\r\n");
         broadcastXml.append("<CmdType>Broadcast</CmdType>\r\n");
         broadcastXml.append("<SN>" + (int)((Math.random()*9+1)*100000) + "</SN>\r\n");
-        broadcastXml.append("<SourceID>" + sipConfig.getId() + "</SourceID>\r\n");
+        broadcastXml.append("<SourceID>" + sipConfig.identitySnapshot().getId() + "</SourceID>\r\n");
         broadcastXml.append("<TargetID>" + channelId + "</TargetID>\r\n");
         broadcastXml.append("</Notify>\r\n");
 

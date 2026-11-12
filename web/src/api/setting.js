@@ -113,7 +113,7 @@ export function getSipServerConfig() {
   })
 }
 
-// 保存国标服务配置(需重启生效)
+// 保存国标服务配置(身份字段对后续请求生效, 绑定字段需重启)
 export function saveSipServerConfig(data) {
   return request({
     method: 'post',

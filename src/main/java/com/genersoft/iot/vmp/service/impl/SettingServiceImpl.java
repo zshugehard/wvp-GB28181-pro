@@ -16,7 +16,10 @@ import com.genersoft.iot.vmp.vmanager.bean.ProfileDeleteRequest;
 import com.genersoft.iot.vmp.vmanager.bean.ProfileDetail;
 import com.genersoft.iot.vmp.vmanager.bean.ProfileInfo;
 import com.genersoft.iot.vmp.vmanager.bean.ProfileSaveRequest;
+import com.genersoft.iot.vmp.vmanager.bean.SipIdentity;
+import com.genersoft.iot.vmp.vmanager.bean.SipIdentityValidator;
 import com.genersoft.iot.vmp.vmanager.bean.SipServerConfig;
+import com.genersoft.iot.vmp.vmanager.bean.SipServerSaveResult;
 import com.genersoft.iot.vmp.vmanager.bean.UserSettingConfig;
 import com.genersoft.iot.vmp.vmanager.bean.UserSettingSaveResult;
 import com.genersoft.iot.vmp.vmanager.bean.WebServerConfig;
@@ -128,6 +131,13 @@ public class SettingServiceImpl implements ISettingService {
      */
     private static final boolean DEFAULT_SIP_ALARM = true;
 
+    private static final List<String> SIP_IDENTITY_FIELDS = List.of("id", "domain", "password");
+
+    /**
+     * 保存国标配置时串行化读改写与运行时身份替换, 避免并发提交产生交叉身份。
+     */
+    private final Object sipSaveLock = new Object();
+
     private static final String[] CLASSPATH_PATTERNS = {
             "classpath*:application-*.yml",
             "classpath*:application-*.yaml"
@@ -171,10 +181,7 @@ public class SettingServiceImpl implements ISettingService {
      * sip.* 在启动阶段绑定到 {@link SipConfig} 并据此创建 SIP Stack, 运行中修改无法生效。
      */
     private static final List<String> SIP_RESTART_REQUIRED_FIELDS = List.of(
-            "id",
-            "domain",
             "port",
-            "password",
             "ip",
             "showIp",
             "timeout",
@@ -783,10 +790,20 @@ public class SettingServiceImpl implements ISettingService {
         config.setTimeout(timeout != null ? timeout : readRuntimeSipTimeout());
 
         if (sipConfig != null) {
+            SipIdentity identity = sipConfig.identitySnapshot();
             config.setRuntimePort(sipConfig.getPort());
             config.setRuntimeIp(sipConfig.getIp());
             config.setRuntimeShowIp(sipConfig.getShowIp());
             config.setRuntimeMonitorIps(sipConfig.getMonitorIps());
+            if (config.getId() == null) {
+                config.setId(identity.getId());
+            }
+            if (config.getDomain() == null) {
+                config.setDomain(identity.getDomain());
+            }
+            if (config.getPassword() == null) {
+                config.setPassword(identity.getPassword());
+            }
         }
 
         config.setProfileId(isMainConfig(entry) ? null : entry.getId());
@@ -797,40 +814,82 @@ public class SettingServiceImpl implements ISettingService {
     }
 
     @Override
-    public String saveSipServerConfig(SipServerConfig config) {
+    public SipServerSaveResult saveSipServerConfig(SipServerConfig config) {
         if (config == null) {
             throw new ControllerException(ErrorCode.ERROR400.getCode(), "配置不能为空");
         }
         validateSipServerConfig(config);
+        SipIdentity identity = SipIdentityValidator.validate(
+                config.getId(), config.getDomain(), config.getPassword());
+        if (sipConfig == null) {
+            throw new ControllerException(ErrorCode.ERROR100.getCode(),
+                    "运行中的国标配置不可用, 无法应用身份字段");
+        }
+
         File file = resolveWritableConfigFile();
-        List<String> lines = readConfigLines(file);
+        List<String> restartFields;
+        synchronized (sipSaveLock) {
+            restartFields = collectChangedSipRestartFields(config);
+            List<String> lines = readConfigLines(file);
 
-        setYamlScalar(lines, new String[]{"sip", "port"}, String.valueOf(config.getPort()));
-        if (config.getId() != null) {
-            setYamlScalar(lines, new String[]{"sip", "id"}, config.getId().trim());
-        }
-        if (config.getDomain() != null) {
-            setYamlScalar(lines, new String[]{"sip", "domain"}, config.getDomain().trim());
-        }
-        if (config.getPassword() != null) {
-            setYamlScalar(lines, new String[]{"sip", "password"}, config.getPassword());
-        }
-        if (config.getIp() != null) {
-            setYamlScalar(lines, new String[]{"sip", "ip"}, config.getIp().trim());
-        }
-        if (config.getShowIp() != null) {
-            setYamlScalar(lines, new String[]{"sip", "show-ip"}, config.getShowIp().trim());
-        }
-        if (config.getAlarm() != null) {
-            setYamlScalar(lines, new String[]{"sip", "alarm"}, String.valueOf(config.getAlarm()));
-        }
-        if (config.getTimeout() != null) {
-            setYamlScalar(lines, new String[]{"sip", "timeout"}, String.valueOf(config.getTimeout()));
-        }
+            setYamlScalar(lines, new String[]{"sip", "port"}, String.valueOf(config.getPort()));
+            setYamlScalar(lines, new String[]{"sip", "id"}, identity.getId());
+            setYamlScalar(lines, new String[]{"sip", "domain"}, identity.getDomain());
+            setYamlScalar(lines, new String[]{"sip", "password"}, quoteYamlString(identity.getPassword()));
+            if (config.getIp() != null) {
+                setYamlScalar(lines, new String[]{"sip", "ip"}, config.getIp().trim());
+            }
+            if (config.getShowIp() != null) {
+                setYamlScalar(lines, new String[]{"sip", "show-ip"}, config.getShowIp().trim());
+            }
+            if (config.getAlarm() != null) {
+                setYamlScalar(lines, new String[]{"sip", "alarm"}, String.valueOf(config.getAlarm()));
+            }
+            if (config.getTimeout() != null) {
+                setYamlScalar(lines, new String[]{"sip", "timeout"}, String.valueOf(config.getTimeout()));
+            }
 
-        writeConfigLines(file, lines);
+            writeSipConfigLinesAtomically(file, lines);
+            sipConfig.applyIdentity(identity);
+        }
         log.info("[系统设置] 国标服务配置已保存: {}", file.getAbsolutePath());
-        return file.getAbsolutePath();
+
+        SipServerSaveResult result = new SipServerSaveResult();
+        result.setFilePath(file.getAbsolutePath());
+        result.setAppliedFields(new ArrayList<>(SIP_IDENTITY_FIELDS));
+        result.setRestartRequiredFields(restartFields);
+        result.setRestartRequired(!restartFields.isEmpty());
+        return result;
+    }
+
+    /**
+     * 收集本次提交中与运行中绑定字段不同的字段; id/domain/password 不在此列表。
+     */
+    private List<String> collectChangedSipRestartFields(SipServerConfig config) {
+        List<String> changed = new ArrayList<>();
+        if (sipConfig == null) {
+            return changed;
+        }
+        if (config.getPort() != null && !Objects.equals(config.getPort(), sipConfig.getPort())) {
+            changed.add("port");
+        }
+        if (config.getIp() != null && !Objects.equals(config.getIp().trim(), nullToEmpty(sipConfig.getIp()))) {
+            changed.add("ip");
+        }
+        if (config.getShowIp() != null && !Objects.equals(config.getShowIp().trim(), nullToEmpty(sipConfig.getShowIp()))) {
+            changed.add("showIp");
+        }
+        if (config.getTimeout() != null && config.getTimeout() != sipConfig.getTimeout()) {
+            changed.add("timeout");
+        }
+        if (config.getAlarm() != null && config.getAlarm() != sipConfig.isAlarm()) {
+            changed.add("alarm");
+        }
+        return changed;
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     // ------------------------------------------------------------------
@@ -1687,18 +1746,10 @@ public class SettingServiceImpl implements ISettingService {
         if (port < 1 || port > 65535) {
             throw new ControllerException(ErrorCode.ERROR400.getCode(), "SIP服务端口必须在 1-65535 之间");
         }
-        if (ObjectUtils.isEmpty(config.getId())) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "国标编号不能为空");
-        }
-        if (!config.getId().trim().matches("\\d{20}")) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "国标编号必须为20位数字");
-        }
-        if (!ObjectUtils.isEmpty(config.getDomain()) && !config.getDomain().trim().matches("\\d{10}")) {
-            throw new ControllerException(ErrorCode.ERROR400.getCode(), "国标域必须为10位数字");
-        }
         if (config.getTimeout() != null && config.getTimeout() <= 0) {
             throw new ControllerException(ErrorCode.ERROR400.getCode(), "命令超时时间必须大于0");
         }
+        SipIdentityValidator.validate(config.getId(), config.getDomain(), config.getPassword());
     }
 
     /**
@@ -1819,6 +1870,14 @@ public class SettingServiceImpl implements ISettingService {
         } catch (IOException e) {
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "写入配置文件失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 国标身份保存必须原子落盘; 复用通用原子写入, 保留原文件权限并避免半写文件。
+     */
+    private void writeSipConfigLinesAtomically(File file, List<String> lines) {
+        String content = String.join(System.lineSeparator(), lines) + System.lineSeparator();
+        writeAtomically(file, content.getBytes(StandardCharsets.UTF_8));
     }
 
     /**

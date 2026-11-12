@@ -2,6 +2,7 @@ package com.genersoft.iot.vmp.web.gb28181;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.genersoft.iot.vmp.conf.SipConfig;
+import com.genersoft.iot.vmp.vmanager.bean.SipIdentity;
 import io.swagger.v3.oas.annotations.Hidden;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +26,7 @@ public class ApiController {
 
     @GetMapping("/getserverinfo")
     private JSONObject getserverinfo(){
+        SipIdentity identity = sipConfig.identitySnapshot();
         JSONObject result = new JSONObject();
         result.put("Authorization","ceshi");
         result.put("Hardware","");
@@ -37,8 +39,8 @@ public class ApiController {
         result.put("ServerTime","2020-09-02 17：11");
         result.put("StartUpTime","2020-09-02 17：11");
         result.put("Server","");
-        result.put("SIPSerial", sipConfig.getId());
-        result.put("SIPRealm", sipConfig.getDomain());
+        result.put("SIPSerial", identity.getId());
+        result.put("SIPRealm", identity.getDomain());
         result.put("SIPHost", sipConfig.getShowIp());
         result.put("SIPPort", sipConfig.getPort());
         result.put("ChannelCount","1000");

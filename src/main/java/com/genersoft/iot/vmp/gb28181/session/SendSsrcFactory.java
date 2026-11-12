@@ -15,15 +15,17 @@ public class SendSsrcFactory {
     @Autowired
     private SipConfig sipConfig;
 
-    private String domainPart;
-
     @PostConstruct
     public void init() {
-        String sipDomain = sipConfig.getDomain();
-        domainPart = sipDomain.length() >= 8 ? sipDomain.substring(3, 8) : sipDomain;
+        // 身份字段可在运行中热更新, domain 必须在每次生成 SSRC 时读取当前快照
     }
 
     public String getSendSsrc(String prefix) {
-        return prefix + domainPart + String.format("%04d", ThreadLocalRandom.current().nextInt(10000));
+        return prefix + currentDomainPart() + String.format("%04d", ThreadLocalRandom.current().nextInt(10000));
+    }
+
+    private String currentDomainPart() {
+        String sipDomain = sipConfig.identitySnapshot().getDomain();
+        return sipDomain.length() >= 8 ? sipDomain.substring(3, 8) : sipDomain;
     }
 }

@@ -14,6 +14,7 @@ import com.genersoft.iot.vmp.vmanager.bean.ProfileDetail;
 import com.genersoft.iot.vmp.vmanager.bean.ProfileInfo;
 import com.genersoft.iot.vmp.vmanager.bean.ProfileSaveRequest;
 import com.genersoft.iot.vmp.vmanager.bean.SipServerConfig;
+import com.genersoft.iot.vmp.vmanager.bean.SipServerSaveResult;
 import com.genersoft.iot.vmp.vmanager.bean.UserSettingConfig;
 import com.genersoft.iot.vmp.vmanager.bean.UserSettingSaveResult;
 import com.genersoft.iot.vmp.vmanager.bean.WVPResult;
@@ -174,9 +175,12 @@ public class SettingController {
     @ResponseBody
     @PostMapping("/sip-server")
     @Operation(summary = "保存国标服务配置", security = @SecurityRequirement(name = JwtUtils.HEADER))
-    public WVPResult<String> saveSipServerConfig(@RequestBody SipServerConfig config) {
-        String path = settingService.saveSipServerConfig(config);
-        return WVPResult.success(path, "配置已保存, 重启服务后生效");
+    public WVPResult<SipServerSaveResult> saveSipServerConfig(@RequestBody SipServerConfig config) {
+        SipServerSaveResult result = settingService.saveSipServerConfig(config);
+        String message = result.isRestartRequired()
+                ? "身份字段已对后续请求生效，绑定字段需重启后生效"
+                : "身份字段已对后续请求生效";
+        return WVPResult.success(result, message);
     }
 
     @ResponseBody

@@ -15,6 +15,7 @@ import com.genersoft.iot.vmp.gb28181.transmit.event.request.ISIPRequestProcessor
 import com.genersoft.iot.vmp.gb28181.transmit.event.request.SIPRequestProcessorParent;
 import com.genersoft.iot.vmp.gb28181.utils.SipUtils;
 import com.genersoft.iot.vmp.storager.IRedisCatchStorage;
+import com.genersoft.iot.vmp.vmanager.bean.SipIdentity;
 import com.genersoft.iot.vmp.utils.IpPortUtil;
 import gov.nist.javax.sip.address.AddressImpl;
 import gov.nist.javax.sip.address.SipUri;
@@ -165,19 +166,21 @@ public class RegisterRequestProcessor extends SIPRequestProcessorParent implemen
             return;
         }
 
-        if (device == null && ObjectUtils.isEmpty(sipConfig.getPassword())) {
+        SipIdentity identity = sipConfig.identitySnapshot();
+        if (device == null && ObjectUtils.isEmpty(identity.getPassword())) {
             log.info("[注册请求] 设备：{}, 地址: {}, 公共密码已经禁用，请添加用户信息后注册", deviceId, requestAddress);
             Response response = getMessageFactory().createResponse(Response.FORBIDDEN, request);
             sipSender.transmitRequest(request.getLocalAddress().getHostAddress(), response);
             return;
         }
-        String password = device != null && !ObjectUtils.isEmpty(device.getPassword()) ? device.getPassword() : sipConfig.getPassword();
+        String password = device != null && !ObjectUtils.isEmpty(device.getPassword())
+                ? device.getPassword() : identity.getPassword();
 
         AuthorizationHeader authHead = (AuthorizationHeader) request.getHeader(AuthorizationHeader.NAME);
         if (!ObjectUtils.isEmpty(password) && authHead == null) {
             log.info("[注册请求] 设备：{}, 回复401: {}", deviceId, requestAddress);
             Response response = getMessageFactory().createResponse(Response.UNAUTHORIZED, request);
-            new DigestServerAuthenticationHelper().generateChallenge(getHeaderFactory(), response, sipConfig.getDomain());
+            new DigestServerAuthenticationHelper().generateChallenge(getHeaderFactory(), response, identity.getDomain());
             sipSender.transmitRequest(request.getLocalAddress().getHostAddress(), response);
             return;
         }
@@ -254,19 +257,21 @@ public class RegisterRequestProcessor extends SIPRequestProcessorParent implemen
             return;
         }
 
-        if (device == null && ObjectUtils.isEmpty(sipConfig.getPassword())) {
+        SipIdentity identity = sipConfig.identitySnapshot();
+        if (device == null && ObjectUtils.isEmpty(identity.getPassword())) {
             log.info("[注销请求] 设备：{}, 地址: {}, 公共密码已经禁用，请添加用户信息后注销", deviceId, requestAddress);
             Response response = getMessageFactory().createResponse(Response.FORBIDDEN, request);
             sipSender.transmitRequest(request.getLocalAddress().getHostAddress(), response);
             return;
         }
-        String password = device != null && !ObjectUtils.isEmpty(device.getPassword()) ? device.getPassword() : sipConfig.getPassword();
+        String password = device != null && !ObjectUtils.isEmpty(device.getPassword())
+                ? device.getPassword() : identity.getPassword();
 
         AuthorizationHeader authHead = (AuthorizationHeader) request.getHeader(AuthorizationHeader.NAME);
         if (!ObjectUtils.isEmpty(password) && authHead == null) {
             log.info("[注销请求] 设备：{}, 回复401: {}", deviceId, requestAddress);
             Response response = getMessageFactory().createResponse(Response.UNAUTHORIZED, request);
-            new DigestServerAuthenticationHelper().generateChallenge(getHeaderFactory(), response, sipConfig.getDomain());
+            new DigestServerAuthenticationHelper().generateChallenge(getHeaderFactory(), response, identity.getDomain());
             sipSender.transmitRequest(request.getLocalAddress().getHostAddress(), response);
             return;
         }
